@@ -1,12 +1,91 @@
-import torch.utils.data as Data
+import os
+import numpy as np
+import PIL.Image as Image
+
+import imgaug as ia
+import imgaug.augmenters as iaa
+import torch.utils.data
+import torchvision.transforms as transforms
 
 
-class Dataset(Data.Dataset):
-	def __init__(self):
+class Dataset(torch.utils.data.Dataset):
+	"""
+	folder structure is:
+	-- Dataset folder
+		-- real
+			-- train
+			-- valid
+			-- test
+		-- STYLE_NAME1
+			-- train
+			-- valid
+			-- test
+		-- STYLE_NAME2
+		...
+	"""
+	def __init__(self, root, style, mode, transform=None):
+		"""
+		Dataset for CartoonGAN,
+		:param root: root path of the dataset
+		:param style: TODO - what is the name
+		:param mode: train / valid / test
+		:param transform: if None, apply Augment
+		"""
 		super(Dataset, self).__init__()
+		# list images
+		self.root = root
+		self.dir = os.path.join(root, style, mode)
+		self.path_list = os.listdir(self.dir)
+		# get transform
+		self.transform = transform
+		if self.transform is None:
+			self.transform = Augment()
 
 	def __len__(self):
-		return
+		return len(self.path_list)
 
 	def __getitem__(self, item):
-		return
+		img = self.dir[item]
+		img = Image.open(img)
+		self.transform(img)
+		transform = transforms.Compose([
+			transforms.ToTensor(),
+			# TODO: how to normalize??
+			# transforms.Normalize(mean=[0.5169, 0.4734, 0.4078], std=[0.2075, 0.2059, 0.1907])
+		])
+		img = transform(img)
+		return img
+
+
+class Augment(object):
+	"""
+	Data augmentation for GAN, using Imgaug
+	"""
+	def __init__(self):
+		sometimes = lambda aug: iaa.Sometimes(0.5, aug)
+		# Define our sequence of augmentation steps that will be applied to every image
+		self.seq = iaa.Sequential(
+			[
+				# apply the following augmenters to most images
+				iaa.Fliplr(0.5),  # horizontally flip 50% of all images
+				iaa.Flipud(0.2),  # vertically flip 20% of all images
+				# crop images by -5% to 10% of their height/width
+				sometimes(iaa.Crop(px=(1, 16), keep_size=False)),
+				sometimes(iaa.Affine(
+					scale={"x": (0.8, 1.2), "y": (0.8, 1.2)},
+					# scale images to 80-120% of their size, individually per axis
+					translate_percent={"x": (-0.2, 0.2), "y": (-0.2, 0.2)},
+					# translate by -20 to +20 percent (per axis)
+					rotate=(-45, 45),  # rotate by -45 to +45 degrees
+					shear=(-16, 16),  # shear by -16 to +16 degrees
+					order=[0, 1],  # use nearest neighbour or bilinear interpolation (fast)
+					cval=(0, 255),  # if mode is constant, use a cval between 0 and 255
+					mode=ia.ALL  # use any of scikit-image's warping modes (see 2nd image from the top for examples)
+				)),
+				iaa.Resize({"height": 224, "width": 224})  # resize
+			],
+			random_order=False
+		)
+
+	def __call__(self, img):
+		return self.seq(images=img)

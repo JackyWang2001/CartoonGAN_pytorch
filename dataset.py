@@ -1,5 +1,5 @@
 import os
-import numpy as np
+import glob
 import PIL.Image as Image
 
 import imgaug as ia
@@ -8,7 +8,7 @@ import torch.utils.data
 import torchvision.transforms as transforms
 
 
-class Dataset(torch.utils.data.Dataset):
+class MyDataset(torch.utils.data.Dataset):
 	"""
 	folder structure is:
 	-- Dataset folder
@@ -19,7 +19,6 @@ class Dataset(torch.utils.data.Dataset):
 		-- STYLE_NAME1
 			-- train
 			-- valid
-			-- test
 		-- STYLE_NAME2
 		...
 	"""
@@ -27,15 +26,15 @@ class Dataset(torch.utils.data.Dataset):
 		"""
 		Dataset for CartoonGAN,
 		:param root: root path of the dataset
-		:param style: TODO - what is the name
+		:param style: real or violet
 		:param mode: train / valid / test
-		:param transform: if None, apply Augment
+		:param transform: if None, apply Augment as default
 		"""
-		super(Dataset, self).__init__()
+		super(MyDataset, self).__init__()
 		# list images
 		self.root = root
 		self.dir = os.path.join(root, style, mode)
-		self.path_list = os.listdir(self.dir)
+		self.path_list = glob.glob(os.path.join(self.dir, '*'))
 		# get transform
 		self.transform = transform
 		if self.transform is None:
@@ -50,8 +49,7 @@ class Dataset(torch.utils.data.Dataset):
 		self.transform(img)
 		transform = transforms.Compose([
 			transforms.ToTensor(),
-			# TODO: how to normalize??
-			# transforms.Normalize(mean=[0.5169, 0.4734, 0.4078], std=[0.2075, 0.2059, 0.1907])
+			transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.2, 0.2, 0.2])
 		])
 		img = transform(img)
 		return img

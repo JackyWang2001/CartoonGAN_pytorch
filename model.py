@@ -1,11 +1,11 @@
 import torch
-import utils
 import torch.nn as nn
 import torch.nn.functional as F
 
+import utils
 
-###### model for one residual block ######
 
+# model for one residual block
 class residual_block(nn.Module):
     def __init__(self, channel, kernel, stride, padding):
         super(residual_block, self).__init__()
@@ -24,32 +24,31 @@ class residual_block(nn.Module):
         c2 = self.conv2(r1)
         output = self.norm2(c2)
 
-        return input + output   # Elementwise sum
+        return input + output  # Elementwise sum
 
 
-###### model for the generator ######
-
+# model for the generator
 class generator(nn.Module):
     def __init__(self, in_channel=3, out_channel=3, filters=64, res_num=8):
-        '''
+        """
             filters: the number of filters/feature maps in the first and last conv layers
             res_num: the number of residual blocks
-        '''
+        """
         super(generator, self).__init__()
 
         # down convolution
         self.down_convs = nn.Sequential(
-            nn.Conv2d(in_channel, filters, 7, 1, 3),    # k7n64s1
+            nn.Conv2d(in_channel, filters, 7, 1, 3),  # k7n64s1
             nn.InstanceNorm2d(filters),
             nn.ReLU(True),
 
-            nn.Conv2d(filters, filters * 2, 3, 2, 1),   # k3n128s2
-            nn.Conv2d(filters * 2, filters * 2, 3, 1, 1),   # k3n128s1
+            nn.Conv2d(filters, filters * 2, 3, 2, 1),  # k3n128s2
+            nn.Conv2d(filters * 2, filters * 2, 3, 1, 1),  # k3n128s1
             nn.InstanceNorm2d(filters * 2),
             nn.ReLU(True),
 
-            nn.Conv2d(filters * 2, filters * 4, 3, 2, 1),   # k3n256s1
-            nn.Conv2d(filters * 4, filters * 4, 3, 1, 1),   # k3n256s1
+            nn.Conv2d(filters * 2, filters * 4, 3, 2, 1),  # k3n256s1
+            nn.Conv2d(filters * 4, filters * 4, 3, 1, 1),  # k3n256s1
             nn.InstanceNorm2d(filters * 4),
             nn.ReLU(True),
         )
@@ -63,10 +62,9 @@ class generator(nn.Module):
 
         # up convolution
         self.up_convs = nn.Sequential(
-            nn.ConvTranspose2d(filter * 4, filter * 2,
-                               3, 2, 1, 1),  # k3n128s1/2
-            nn.Conv2d(filter * 2, filter * 2, 3, 1, 1),  # k3n128s1
-            nn.InstanceNorm2d(filter * 2),
+            nn.ConvTranspose2d(filters * 4, filters * 2, 3, 2, 1, 1),  # k3n128s1/2
+            nn.Conv2d(filters * 2, filters * 2, 3, 1, 1),  # k3n128s1
+            nn.InstanceNorm2d(filters * 2),
             nn.ReLU(True),
 
             nn.ConvTranspose2d(filter * 2, filter, 3, 2, 1, 1),  # k3n64s1/2
@@ -74,7 +72,7 @@ class generator(nn.Module):
             nn.InstanceNorm2d(filter),
             nn.ReLU(True),
 
-            nn.Conv2d(filter, out_channel, 7, 1, 3),    # k7n3s1
+            nn.Conv2d(filters, out_channel, 7, 1, 3),  # k7n3s1
             nn.Tanh(),
         )
 
@@ -87,36 +85,35 @@ class generator(nn.Module):
         return output
 
 
-###### model for the discriminator ######
-
+# model for the discriminator
 class discriminator(nn.Module):
-    def __init__(self, in_channel, out_channel, filters=32):
-        '''
+    def __init__(self, in_channel=3, out_channel=3, filters=32):
+        """
             filters: the number of filters/feature maps in the first conv layers
-        '''
+        """
         super(discriminator, self).__init__()
 
         self.convs = nn.Sequential(
-            nn.Conv2d(in_channel, filters, 3, 1, 1),    # k3n32s1
+            nn.Conv2d(in_channel, filters, 3, 1, 1),  # k3n32s1
             nn.LeakyReLU(0.2, True),
 
-            nn.Conv2d(filters, filters * 2, 3, 2, 1),   # k3n64s2
+            nn.Conv2d(filters, filters * 2, 3, 2, 1),  # k3n64s2
             nn.LeakyReLU(0.2, True),
-            nn.Conv2d(filters * 2, filters * 4, 3, 1, 1),   # k3n128s1
+            nn.Conv2d(filters * 2, filters * 4, 3, 1, 1),  # k3n128s1
             nn.InstanceNorm2d(filters * 4),
             nn.LeakyReLU(0.2, True),
 
-            nn.Conv2d(filters * 4, filters * 4, 3, 2, 1),   # k3n128s2
+            nn.Conv2d(filters * 4, filters * 4, 3, 2, 1),  # k3n128s2
             nn.LeakyReLU(0.2, True),
-            nn.Conv2d(filters * 4, filters * 8, 3, 1, 1),   # k3n256s1
+            nn.Conv2d(filters * 4, filters * 8, 3, 1, 1),  # k3n256s1
             nn.InstanceNorm2d(filters * 8),
             nn.LeakyReLU(0.2, True),
 
-            nn.Conv2d(filters * 8, filters * 8, 3, 1, 1),   # k3n256s1
+            nn.Conv2d(filters * 8, filters * 8, 3, 1, 1),  # k3n256s1
             nn.InstanceNorm2d(filters * 8),
             nn.LeakyReLU(0.2, True),
 
-            nn.Conv2d(filters * 8, out_channel, 3, 1, 1),   # k3n1s1
+            nn.Conv2d(filters * 8, out_channel, 3, 1, 1),  # k3n1s1
             nn.Sigmoid(),
         )
 
@@ -126,5 +123,5 @@ class discriminator(nn.Module):
         output = self.convs(input)
         return output
 
+# VGG19
 
-###### VGG19 ######

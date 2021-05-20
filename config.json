@@ -1,0 +1,29 @@
+{
+  "experiment_name": "default",
+
+  "num_epoch": 50,
+
+  "dataset": {
+    "root": "./data",
+    "batch_size": 128
+  },
+
+  "model": {
+    "G_path": "./models/G_default.pt",
+    "D_path": "./models/D_default.pt"
+  },
+
+  "optim": {
+    "D_lr": 1e-3,
+    "G_lr": 1e-3,
+    "D_step": [20, 40, 60],
+    "G_step": [20, 40, 60],
+    "D_gamma": 0.1,
+    "G_gamma": 0.1
+  },
+
+  "valid": {
+    "save_results": true,
+    "save_num": 20
+  }
+}

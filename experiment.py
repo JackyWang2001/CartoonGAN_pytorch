@@ -1,6 +1,7 @@
 import os
 import json
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -22,7 +23,8 @@ class Experiment:
         else:
             raise Exception("file does not exist: %s" % config_file)
         # read in
-        self.root = config["dataset"]["root"]
+        root = config["dataset"]["root"]
+        self.root = os.path.abspath(root)
         self.num_epoch = config["num_epoch"]
         self.batch_size = config["dataset"]["batch_size"]
         self.G_path = config["model"]["G_path"]
@@ -36,7 +38,10 @@ class Experiment:
             target_dir = os.path.join('data', 'edge_smoothed')
             utils.edge_promoting(src_dir, target_dir)
         else:
-            print('edge-promoting already done')
+            print("edge-promoting already done %s" % os.path.join(self.root, "edge_smoothed"))
+        # initialize dataset
+        train_real_dataset = MyDataset(self.root, style="real", mode="train")
+        train_anim_dataset = MyDataset(self.root, style="edge_smoothed", mode="")
 
         val_real_dataset = MyDataset(self.root, style="real", mode="valid")
         val_anim_dataset = MyDataset(self.root, style="violet", mode="valid")
@@ -122,6 +127,17 @@ class Experiment:
         return
 
     def _valid(self):
+        save_results = self.config["valid"]["save_results"]
+        save_num = self.config["valid"]["save_num"]
+        for src, tgt in self.val_real_loader, self.val_anim_loader:
+            src, tgt = src.to(self.device), tgt.to(self.device)
+            # TODO: compute loss
+            outputs = self.G(src)
+            outputs = outputs.to("cpu").numpy()  # [B, C=3, H=256, W=256]
+            B, C, H, W = outputs.shape
+            # if save is true in config
+            if save_results:
+                idx = np.random.shuffle()
         return
 
     def run(self):
@@ -130,7 +146,7 @@ class Experiment:
             self._valid()
         self._test()
 
-    def _save(self, epoch, D_state, G_state, D_optim_state, G_optim_state):
+    def _save_model(self, epoch, D_state, G_state, D_optim_state, G_optim_state):
         """ save model """
         torch.save({"epoch": epoch, "D_state": D_state, "D_optim_state": D_optim_state}, os.path.join(self.D_path))
         torch.save({"epoch": epoch, "G_state": G_state, "G_optim_state": G_optim_state}, os.path.join(self.G_path))

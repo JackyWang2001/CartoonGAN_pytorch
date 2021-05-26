@@ -4,7 +4,7 @@
   "num_epoch": 50,
 
   "dataset": {
-    "root": "./data",
+    "root": "/media/jpl/T7/CartoonGAN_Data",
     "batch_size": 128
   },
 
@@ -24,6 +24,6 @@
 
   "valid": {
     "save_results": true,
-    "save_num": 20
+    "save_num": 5
   }
 }

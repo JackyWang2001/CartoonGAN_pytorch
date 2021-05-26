@@ -33,7 +33,7 @@ class MyDataset(torch.utils.data.Dataset):
 		super(MyDataset, self).__init__()
 		# list images
 		self.root = root
-		self.dir = os.path.join(root, style, mode)
+		self.dir = os.path.join(self.root, style, mode)
 		self.path_list = glob.glob(os.path.join(self.dir, '*'))
 		# get transform
 		self.transform = transform
@@ -80,7 +80,7 @@ class Augment(object):
 					cval=(0, 255),  # if mode is constant, use a cval between 0 and 255
 					mode=ia.ALL  # use any of scikit-image's warping modes (see 2nd image from the top for examples)
 				)),
-				iaa.Resize({"height": 224, "width": 224})  # resize
+				iaa.Resize({"height": 256, "width": 256})  # resize
 			],
 			random_order=False
 		)

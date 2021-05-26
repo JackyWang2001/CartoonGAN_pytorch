@@ -1,5 +1,6 @@
 import os
 import json
+from PIL import Image
 
 import numpy as np
 import torch
@@ -137,24 +138,60 @@ class Experiment:
 
         return
 
-    def _valid(self):
+    def _valid(self, e):
+        self.G.eval()
         save_results = self.config["valid"]["save_results"]
+        save_path = os.path.join(self.config["valid"]["save_path"])
         save_num = self.config["valid"]["save_num"]
         for src, tgt in self.val_real_loader, self.val_anim_loader:
             src, tgt = src.to(self.device), tgt.to(self.device)
-            # TODO: compute loss
             outputs = self.G(src)
-            outputs = outputs.to("cpu").numpy()  # [B, C=3, H=256, W=256]
+
+            # discriminate real anime image
+            D_real = self.D(tgt)
+            D_real_loss = self.BCE_loss(D_real, self.real_mask)
+
+            # discriminate generated/fake anime image
+            fake_anim = self.G(src)
+            D_fake = self.D(fake_anim)
+            D_fake_loss = self.BCE_loss(D_fake, self.fake_mask)
+
+            D_loss = D_real_loss + D_fake_loss
+            D_losses.append(D_loss)
+
+            # generated/fake anime image
+            fake_anim = self.G(src)
+            D_fake = self.D(fake_anim)
+            D_fake_loss = self.BCE_loss(D_fake, self.real_mask)
+
+            # content loss (L1)
+            src_feature = self.vgg19((src + 1) / 2)
+            G_feature = self.vgg19((fake_anim + 1) / 2)
+            Content_loss = self.content_loss_lambda * self.L1_loss(G_feature, src_feature.detach())
+
+            G_loss = D_fake_loss + Content_loss
+            G_losses.append(G_loss)
+
+            # visualize generated samples
             B, C, H, W = outputs.shape
+            outputs = outputs.to("cpu").numpy()  # [B, C=3, H=256, W=256]
+            outputs = outputs.transpose(0, 2, 3, 1)
             # if save is true in config
             if save_results:
-                idx = np.random.shuffle()
+                idx = np.arange(B)
+                np.random.shuffle(idx)
+                idx = idx[:save_num]
+                for i in range(save_num):
+                    filename = "%s_%s.png" % (e, i)
+                    output = outputs[idx[i], :, :, :]
+                    output = Image.fromarray(output)
+                    output.save(save_path + filename)
         return
 
     def run(self):
-        for i in range(self.num_epoch):
+        for e in range(self.num_epoch):
             self._train()
-            self._valid()
+            self._valid(e)
         self._test()
 
     def _save_model(self, epoch, D_state, G_state, D_optim_state, G_optim_state):

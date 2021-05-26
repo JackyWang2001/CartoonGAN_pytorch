@@ -24,6 +24,7 @@
 
   "valid": {
     "save_results": true,
+    "save_path": "./data/valid_results",
     "save_num": 5
   }
 }

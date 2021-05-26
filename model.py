@@ -56,7 +56,7 @@ class generator(nn.Module):
         # residual blocks
         self.residual_blocks = []
         for i in range(res_num):
-            self.residual_blocks.append(residual_block(filter * 4, 3, 1, 1))
+            self.residual_blocks.append(residual_block(filters * 4, 3, 1, 1))
 
         self.residual_blocks = nn.Sequential(*self.residual_blocks)
 
@@ -67,9 +67,9 @@ class generator(nn.Module):
             nn.InstanceNorm2d(filters * 2),
             nn.ReLU(True),
 
-            nn.ConvTranspose2d(filter * 2, filter, 3, 2, 1, 1),  # k3n64s1/2
-            nn.Conv2d(filter, filter, 3, 1, 1),  # k3n64s1
-            nn.InstanceNorm2d(filter),
+            nn.ConvTranspose2d(filters * 2, filters, 3, 2, 1, 1),  # k3n64s1/2
+            nn.Conv2d(filters, filters, 3, 1, 1),  # k3n64s1
+            nn.InstanceNorm2d(filters),
             nn.ReLU(True),
 
             nn.Conv2d(filters, out_channel, 7, 1, 3),  # k7n3s1

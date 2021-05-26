@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader
+import torchvision
 
 import model
 import utils
@@ -29,13 +30,10 @@ class Experiment:
         self.batch_size = config["dataset"]["batch_size"]
         self.G_path = config["model"]["G_path"]
         self.D_path = config["model"]["D_path"]
-        # initialize dataset
-        train_real_dataset = MyDataset(self.root, style="real", mode="train")
-        train_anim_dataset = MyDataset(self.root, style="violet", mode="train")
-        # TODO: edge promoting
-        if not os.path.isdir(os.path.join('data', 'edge_smoothed')):
-            src_dir = os.path.join('data', 'real')
-            target_dir = os.path.join('data', 'edge_smoothed')
+        # edge promoting
+        if not os.path.isdir(os.path.join(self.root, "edge_smoothed")):
+            src_dir = os.path.join(self.root, "violet", "train")
+            target_dir = os.path.join(self.root, "edge_smoothed")
             utils.edge_promoting(src_dir, target_dir)
         else:
             print("edge-promoting already done %s" % os.path.join(self.root, "edge_smoothed"))
@@ -61,10 +59,14 @@ class Experiment:
         # initialize Discriminator and Generator
         self.D = model.discriminator()
         self.D.to(self.device)
-        self.D.train()      # put model to training mode
+
         self.G = model.generator()
         self.G.to(self.device)
-        self.G.train()
+
+        # initialize vgg19 pretrained model
+        self.vgg19 = torchvision.models.vgg19(pretrained=True)
+        self.vgg19.to(self.device)
+        self.vgg19.eval()
 
         # initialize optimizer
         self.D_optimizer = optim.Adam(self.D.parameters(), config["optim"]["D_lr"], betas=(0.9, 0.99))
@@ -83,24 +85,33 @@ class Experiment:
         train the model for 1 epoch
         :return:
         """
+        # put model to training mode
+        self.D.train()
+        self.G.train()
 
-        for src, anim in (self.train_real_loader, self.train_anim_loader):
-            src, anim = src.to(self.device), anim.to(self.device)
+        real = torch.ones(self.batch_size, 1, 256 // 4, 256 // 4).to(self.device)
+        fake = torch.zeros(self.batch_size, 1, 256 // 4, 256 // 4).to(self.device)
+
+        for src, anim in (self.train_real_loader, self.train_anim_loa
+            origin_anim = anim[:, :, :, :256]
+            edge_smooth_anim = anim[:, :, :, 256:]
+            src = src.to(self.device)
+            edge_smooth_anim, origin_anim = edge_smooth_anim.to(self.device), origin_anim.to(self.device)
 
             # train discriminator...
 
             # discriminate real anime image
-            D_real = self.D(anim)
-            D_real_loss = self.BCE_loss(D_real)
+            D_real = self.D(origin_anim)
+            D_real_loss = self.BCE_loss(D_real, real)
 
             # discriminate generated/fake anime image
             fake_anim = self.G(src)
             D_fake = self.D(fake_anim)
-            D_fake_loss = self.BCE_loss(D_fake)
+            D_fake_loss = self.BCE_loss(D_fake, fake)
 
-            # TODO: discriminate real anime image without clear edges
-            D_edge = 0
-            D_edge_loss = self.BCE_loss(D_edge)
+            # discriminate real anime image without clear edges
+            D_edge = self.D(edge_smooth_anim)
+            D_edge_loss = self.BCE_loss(D_edge, fake)
 
             D_loss = D_real_loss + D_fake_loss + D_edge_loss
             self.D_optimizer.zero_grad()
@@ -112,12 +123,12 @@ class Experiment:
             # generated/fake anime image
             fake_anim = self.G(src)
             D_fake = self.D(fake_anim)
-            D_fake_loss = self.BCE_loss(D_fake)
+            D_fake_loss = self.BCE_loss(D_fake, real)
 
             # TODO: content loss (L1)
-            src_feature = 0
-            G_feature = 0
-            Content_loss = self.L1_loss(G_feature, src_feature)
+            src_feature = self.vgg19( (src + 1) / 2 )
+            G_feature = self.vgg19( (fake_anim + 1) / 2 )
+            Content_loss = self.L1_loss(G_feature, src_feature.detach())
 
             G_loss = D_fake_loss + Content_loss
             self.G_optimizer.zero_grad()

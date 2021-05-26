@@ -73,9 +73,14 @@ class Experiment:
         self.D_optimizer = optim.Adam(self.D.parameters(), config["optim"]["D_lr"], betas=(0.9, 0.99))
         self.G_optimizer = optim.Adam(self.G.parameters(), config["optim"]["G_lr"], betas=(0.9, 0.99))
 
+        # masks
+        self.real_mask = torch.ones(self.batch_size, 1, 256 // 4, 256 // 4).to(self.device)
+        self.fake_mask = torch.zeros(self.batch_size, 1, 256 // 4, 256 // 4).to(self.device)
+
         # initialize loss function
         self.BCE_loss = nn.BCELoss().to(self.device)
         self.L1_loss = nn.L1Loss().to(self.device)
+        self.content_loss_lambda = 1
 
         # initialize scheduler
         self.D_scheduler = MultiStepLR(self.D_optimizer, config["optim"]["D_step"], config["optim"]["D_gamma"])
@@ -90,10 +95,15 @@ class Experiment:
         self.D.train()
         self.G.train()
 
-        real = torch.ones(self.batch_size, 1, 256 // 4, 256 // 4).to(self.device)
-        fake = torch.zeros(self.batch_size, 1, 256 // 4, 256 // 4).to(self.device)
+        self.G_scheduler.step()
+        self.D_scheduler.step()
 
-        for src, anim in (self.train_real_loader, self.train_anim_loa
+        # arrays to store the losses
+        D_losses = []
+        G_losses = []
+        Content_losses = []
+
+        for src, anim in (self.train_real_loader, self.train_anim_loader):
             origin_anim = anim[:, :, :, :256]
             edge_smooth_anim = anim[:, :, :, 256:]
             src = src.to(self.device)
@@ -103,16 +113,16 @@ class Experiment:
 
             # discriminate real anime image
             D_real = self.D(origin_anim)
-            D_real_loss = self.BCE_loss(D_real, real)
+            D_real_loss = self.BCE_loss(D_real, self.real_mask)
 
             # discriminate generated/fake anime image
             fake_anim = self.G(src)
             D_fake = self.D(fake_anim)
-            D_fake_loss = self.BCE_loss(D_fake, fake)
+            D_fake_loss = self.BCE_loss(D_fake, self.fake_mask)
 
             # discriminate real anime image without clear edges
             D_edge = self.D(edge_smooth_anim)
-            D_edge_loss = self.BCE_loss(D_edge, fake)
+            D_edge_loss = self.BCE_loss(D_edge, self.fake_mask)
 
             D_loss = D_real_loss + D_fake_loss + D_edge_loss
             self.D_optimizer.zero_grad()
@@ -124,25 +134,33 @@ class Experiment:
             # generated/fake anime image
             fake_anim = self.G(src)
             D_fake = self.D(fake_anim)
-            D_fake_loss = self.BCE_loss(D_fake, real)
+            D_fake_loss = self.BCE_loss(D_fake, self.real_mask)
 
-            # TODO: content loss (L1)
-            src_feature = self.vgg19( (src + 1) / 2 )
-            G_feature = self.vgg19( (fake_anim + 1) / 2 )
-            Content_loss = self.L1_loss(G_feature, src_feature.detach())
+            # content loss (L1)
+            src_feature = self.vgg19((src + 1) / 2)
+            G_feature = self.vgg19((fake_anim + 1) / 2)
+            Content_loss = self.content_loss_lambda * self.L1_loss(G_feature, src_feature.detach())
 
             G_loss = D_fake_loss + Content_loss
             self.G_optimizer.zero_grad()
             G_loss.backward()
             self.G_optimizer.step()
 
-        return
+            D_losses.append(D_loss)
+            G_losses.append(G_loss)
+            Content_losses.append(Content_loss)
+
+        return D_losses, G_losses, Content_losses
 
     def _valid(self, e):
         self.G.eval()
         save_results = self.config["valid"]["save_results"]
         save_path = os.path.join(self.config["valid"]["save_path"])
         save_num = self.config["valid"]["save_num"]
+
+        # arrays to store the losses
+        D_losses = []
+        G_losses = []
         for src, tgt in self.val_real_loader, self.val_anim_loader:
             src, tgt = src.to(self.device), tgt.to(self.device)
             outputs = self.G(src)

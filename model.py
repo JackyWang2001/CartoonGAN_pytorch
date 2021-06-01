@@ -16,15 +16,15 @@ class residual_block(nn.Module):
 
         utils.initialize_weights(self)
 
-    def forward(self, input):
-        c1 = self.conv1(input)
+    def forward(self, inputs):
+        c1 = self.conv1(inputs)
         n1 = self.norm1(c1)
         r1 = F.relu(n1, True)
 
         c2 = self.conv2(r1)
-        output = self.norm2(c2)
+        outputs = self.norm2(c2)
 
-        return input + output  # Elementwise sum
+        return inputs + outputs  # Elementwise sum
 
 
 # model for the generator

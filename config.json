@@ -1,7 +1,7 @@
 {
   "experiment_name": "default",
 
-  "num_epoch": 50,
+  "num_epoch": 75,
 
   "dataset": {
     "root": "/media/jpl/T7/CartoonGAN_Data",
@@ -17,9 +17,13 @@
     "D_lr": 1e-3,
     "G_lr": 1e-4,
     "D_step": [20, 40, 60],
-    "G_step": [30, 50, 70],
+    "G_step": [40, 50, 90],
     "D_gamma": 0.1,
     "G_gamma": 0.1
+  },
+
+  "train": {
+    "G_warming": 15
   },
 
   "valid": {

@@ -46,11 +46,11 @@ class Experiment:
         val_anim_dataset = MyDataset(self.root, style="violet", mode="valid")
         test_dataset = MyDataset(self.root, style="real", mode="test")
         self.train_real_loader = DataLoader(train_real_dataset, batch_size=self.batch_size, shuffle=True,
-                                            num_workers=48)
+                                            num_workers=12)
         self.train_anim_loader = DataLoader(train_anim_dataset, batch_size=self.batch_size, shuffle=True,
-                                            num_workers=48)
-        self.val_real_loader = DataLoader(val_real_dataset, batch_size=self.batch_size, shuffle=True, num_workers=48)
-        self.val_anim_loader = DataLoader(val_anim_dataset, batch_size=self.batch_size, shuffle=True, num_workers=48)
+                                            num_workers=12)
+        self.val_real_loader = DataLoader(val_real_dataset, batch_size=self.batch_size, shuffle=True, num_workers=12)
+        self.val_anim_loader = DataLoader(val_anim_dataset, batch_size=self.batch_size, shuffle=True, num_workers=12)
 
         self.test_loader = ...
 
@@ -152,6 +152,80 @@ class Experiment:
         self.D_scheduler.step()
         return D_losses, G_losses, Content_losses
 
+    def _train_warming(self, e):
+        """
+        train the model for 1 epoch
+        :return:
+        """
+
+        # put model to training mode
+        self.D.train()
+        self.G.train()
+
+        # arrays to store the losses
+        D_losses = []
+        G_losses = []
+        Content_losses = []
+
+        for i, data in enumerate(zip(self.train_real_loader, self.train_anim_loader)):
+            src, anim = data[0], data[1]
+            origin_anim = anim[:, :, :, :256]
+            edge_smooth_anim = anim[:, :, :, 256:]
+            src = src.to(self.device)
+            edge_smooth_anim, origin_anim = edge_smooth_anim.to(self.device), origin_anim.to(self.device)
+
+            # train discriminator...
+
+            if e > self.config["train"]["G_warming"]:
+                # discriminate real anime image
+                D_real = self.D(origin_anim)
+                D_real_loss = self.BCE_loss(D_real, torch.ones_like(D_real, device=self.device))
+
+                # discriminate generated/fake anime image
+                fake_anim = self.G(src)
+                D_fake = self.D(fake_anim)
+                D_fake_loss = self.BCE_loss(D_fake, torch.zeros_like(D_fake, device=self.device))
+
+                # discriminate real anime image without clear edges
+                D_edge = self.D(edge_smooth_anim)
+                D_edge_loss = self.BCE_loss(D_edge, torch.zeros_like(D_edge, device=self.device))
+
+                D_loss = D_real_loss + D_fake_loss + D_edge_loss
+                self.D_optimizer.zero_grad()
+                D_loss.backward()
+                self.D_optimizer.step()
+
+                D_losses.append(D_loss.item())
+            else:
+                D_loss = 0
+                D_losses.append(D_loss)
+
+            # generated/fake anime image
+            fake_anim = self.G(src)
+            D_fake = self.D(fake_anim)
+            D_fake_loss = self.BCE_loss(D_fake, torch.ones_like(D_fake, device=self.device))
+
+            # content loss (L1)
+            src_feature = self.vgg19((src + 1) / 2)
+            G_feature = self.vgg19((fake_anim + 1) / 2)
+            Content_loss = self.content_loss_lambda * self.L1_loss(G_feature, src_feature.detach())
+
+            G_loss = D_fake_loss + Content_loss
+            self.G_optimizer.zero_grad()
+            G_loss.backward()
+            self.G_optimizer.step()
+
+            G_losses.append(G_loss.item())
+            Content_losses.append(Content_loss.item())
+
+        print("e, Discriminator loss: %.3f, Generator loss: %.3f, Content loss: %.3f" % (np.mean(D_losses),
+                                                                                      np.mean(G_losses),
+                                                                                      np.mean(Content_losses)))
+        self.G_scheduler.step()
+        if e > self.config["train"]["G_warming"]:
+            self.D_scheduler.step()
+        return D_losses, G_losses, Content_losses
+
     def _valid(self, e):  # use e for image names
         self.G.eval()
         save_results = self.config["valid"]["save_results"]
@@ -209,7 +283,7 @@ class Experiment:
 
     def run(self):
         for e in range(self.num_epoch):
-            self._train()
+            self._train_warming(e)
             self._valid(e)
         # self._test()
 

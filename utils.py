@@ -16,10 +16,11 @@ def initialize_weights(model):
             m.weight.data.normal_(0, 0.02)
             m.bias.data.zero_()
         elif isinstance(m, nn.Linear):
-            print("Linear")
-        elif isinstance(m, nn.InstanceNorm2d):
-            print("instanceNorm2d")
-
+            m.weight.data.normal_(0, 0.02)
+            m.bias.data.zero_()
+        elif isinstance(m, nn.BatchNorm2d):
+            m.weight.data.fill_(1)
+            m.bias.data.zero_()
 
 def edge_promoting(root, save):
     """

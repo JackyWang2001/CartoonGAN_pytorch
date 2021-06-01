@@ -122,6 +122,3 @@ class discriminator(nn.Module):
     def forward(self, input):
         output = self.convs(input)
         return output
-
-# VGG19
-

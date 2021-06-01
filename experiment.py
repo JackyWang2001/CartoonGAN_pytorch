@@ -73,10 +73,6 @@ class Experiment:
         self.D_optimizer = optim.Adam(self.D.parameters(), config["optim"]["D_lr"], betas=(0.9, 0.99))
         self.G_optimizer = optim.Adam(self.G.parameters(), config["optim"]["G_lr"], betas=(0.9, 0.99))
 
-        # masks
-        self.real_mask = torch.ones(self.batch_size, 1, 256 // 4, 256 // 4).to(self.device)
-        self.fake_mask = torch.zeros(self.batch_size, 1, 256 // 4, 256 // 4).to(self.device)
-
         # initialize loss function
         self.BCE_loss = nn.BCELoss().to(self.device)
         self.L1_loss = nn.L1Loss().to(self.device)
@@ -111,16 +107,16 @@ class Experiment:
 
             # discriminate real anime image
             D_real = self.D(origin_anim)
-            D_real_loss = self.BCE_loss(D_real, self.real_mask)
+            D_real_loss = self.BCE_loss(D_real, torch.ones_like(D_real, device=self.device))
 
             # discriminate generated/fake anime image
             fake_anim = self.G(src)
             D_fake = self.D(fake_anim)
-            D_fake_loss = self.BCE_loss(D_fake, self.fake_mask)
+            D_fake_loss = self.BCE_loss(D_fake, torch.zeros_like(D_fake, device=self.device))
 
             # discriminate real anime image without clear edges
             D_edge = self.D(edge_smooth_anim)
-            D_edge_loss = self.BCE_loss(D_edge, self.fake_mask)
+            D_edge_loss = self.BCE_loss(D_edge, torch.zeros_like(D_edge, device=self.device))
 
             D_loss = D_real_loss + D_fake_loss + D_edge_loss
             self.D_optimizer.zero_grad()
@@ -132,7 +128,7 @@ class Experiment:
             # generated/fake anime image
             fake_anim = self.G(src)
             D_fake = self.D(fake_anim)
-            D_fake_loss = self.BCE_loss(D_fake, self.real_mask)
+            D_fake_loss = self.BCE_loss(D_fake, torch.ones_like(D_fake, device=self.device))
 
             # content loss (L1)
             src_feature = self.vgg19((src + 1) / 2)
@@ -162,11 +158,8 @@ class Experiment:
         save_path = os.path.join(self.config["valid"]["save_path"])
         save_num = self.config["valid"]["save_num"]
 
-        # arrays to store the losses
-        D_losses = []
-        G_losses = []
-        for src, tgt in self.val_real_loader, self.val_anim_loader:
-            src, tgt = src.to(self.device), tgt.to(self.device)
+        for batch_idx, src in enumerate(self.val_real_loader):
+            src = src.to(self.device)
             outputs = self.G(src)
 
             # masks
@@ -201,7 +194,7 @@ class Experiment:
 
             # visualize generated samples
             B, C, H, W = outputs.shape
-            outputs = outputs.to("cpu").numpy()  # [B, C=3, H=256, W=256]
+            outputs = outputs.to("cpu").detach().numpy()  # [B, C=3, H=256, W=256]
             outputs = outputs.transpose(0, 2, 3, 1)
             # if save is true in config
             if save_results:

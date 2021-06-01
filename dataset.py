@@ -2,6 +2,7 @@ import os
 import glob
 import PIL.Image as Image
 
+import numpy as np
 import imgaug as ia
 import imgaug.augmenters as iaa
 import torch.utils.data
@@ -38,20 +39,36 @@ class MyDataset(torch.utils.data.Dataset):
 		# get transform
 		self.transform = transform
 		if self.transform is None:
-			self.transform = Augment()
+			if style == "edge_smoothed":
+				self.transform = transforms.Compose([
+					transforms.ToTensor(),
+					transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.2, 0.2, 0.2])
+				])
+			elif style == "real":
+				self.transform = transforms.Compose([
+					transforms.Resize((256, 256)),
+					transforms.ToTensor(),
+					transforms.Normalize(mean=0.5, std=0.2)
+					# transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.2, 0.2, 0.2])
+				])
+			elif style == "violet":
+				self.transform = transforms.Compose([
+					transforms.Resize((256, 256)),
+					transforms.ToTensor(),
+					transforms.Normalize(mean=0.5, std=0.2)
+					# transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.2, 0.2, 0.2])
+				])
+			self.augment = Augment()
 
 	def __len__(self):
 		return len(self.path_list)
 
 	def __getitem__(self, item):
-		img = self.dir[item]
-		img = Image.open(img)
-		self.transform(img)
-		transform = transforms.Compose([
-			transforms.ToTensor(),
-			transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.2, 0.2, 0.2])
-		])
-		img = transform(img)
+		img = self.path_list[item]
+		# img = np.asarray(Image.open(img))
+		# img = self.transform(img)
+		img = Image.open(img).convert('RGB')
+		img = self.transform(img)
 		return img
 
 

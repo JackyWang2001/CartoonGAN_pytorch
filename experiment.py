@@ -49,12 +49,12 @@ class Experiment:
                                             num_workers=48)
         self.train_anim_loader = DataLoader(train_anim_dataset, batch_size=self.batch_size, shuffle=True,
                                             num_workers=48)
-        self.val_real_loader = ...
-        self.val_anim_loader = ...
+        self.val_real_loader = DataLoader(val_real_dataset, batch_size=self.batch_size, shuffle=True, num_workers=48)
+        self.val_anim_loader = DataLoader(val_anim_dataset, batch_size=self.batch_size, shuffle=True, num_workers=48)
 
         self.test_loader = ...
 
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         print("Using device: ", self.device)
 
         # initialize Discriminator and Generator
@@ -65,7 +65,7 @@ class Experiment:
         self.G.to(self.device)
 
         # initialize vgg19 pretrained model
-        self.vgg19 = torchvision.models.vgg19(pretrained=True)
+        self.vgg19 = torchvision.models.mobilenet_v2(pretrained=True)
         self.vgg19.to(self.device)
         self.vgg19.eval()
 
@@ -95,15 +95,13 @@ class Experiment:
         self.D.train()
         self.G.train()
 
-        self.G_scheduler.step()
-        self.D_scheduler.step()
-
         # arrays to store the losses
         D_losses = []
         G_losses = []
         Content_losses = []
 
-        for src, anim in (self.train_real_loader, self.train_anim_loader):
+        for i, data in enumerate(zip(self.train_real_loader, self.train_anim_loader)):
+            src, anim = data[0], data[1]
             origin_anim = anim[:, :, :, :256]
             edge_smooth_anim = anim[:, :, :, 256:]
             src = src.to(self.device)
@@ -146,13 +144,19 @@ class Experiment:
             G_loss.backward()
             self.G_optimizer.step()
 
-            D_losses.append(D_loss)
-            G_losses.append(G_loss)
-            Content_losses.append(Content_loss)
+            D_losses.append(D_loss.item())
+            G_losses.append(G_loss.item())
+            Content_losses.append(Content_loss.item())
 
+        print("Discriminator loss: %.3f, Generator loss: %.3f, Content loss: %.3f" % (np.mean(D_losses),
+                                                                                      np.mean(G_losses),
+                                                                                      np.mean(Content_losses)))
+
+        self.G_scheduler.step()
+        self.D_scheduler.step()
         return D_losses, G_losses, Content_losses
 
-    def _valid(self, e):
+    def _valid(self, e):  # use e for image names
         self.G.eval()
         save_results = self.config["valid"]["save_results"]
         save_path = os.path.join(self.config["valid"]["save_path"])
@@ -165,30 +169,35 @@ class Experiment:
             src, tgt = src.to(self.device), tgt.to(self.device)
             outputs = self.G(src)
 
-            # discriminate real anime image
-            D_real = self.D(tgt)
-            D_real_loss = self.BCE_loss(D_real, self.real_mask)
+            # masks
+            # real_mask = torch.ones(src.shape[0], 3, 256 // 4, 256 // 4, device=self.device)
+            # fake_mask = torch.zeros(tgt.shape[0], 3, 256 // 4, 256 // 4, device=self.device)
 
-            # discriminate generated/fake anime image
-            fake_anim = self.G(src)
-            D_fake = self.D(fake_anim)
-            D_fake_loss = self.BCE_loss(D_fake, self.fake_mask)
-
-            D_loss = D_real_loss + D_fake_loss
-            D_losses.append(D_loss)
-
-            # generated/fake anime image
-            fake_anim = self.G(src)
-            D_fake = self.D(fake_anim)
-            D_fake_loss = self.BCE_loss(D_fake, self.real_mask)
-
-            # content loss (L1)
-            src_feature = self.vgg19((src + 1) / 2)
-            G_feature = self.vgg19((fake_anim + 1) / 2)
-            Content_loss = self.content_loss_lambda * self.L1_loss(G_feature, src_feature.detach())
-
-            G_loss = D_fake_loss + Content_loss
-            G_losses.append(G_loss)
+            # # discriminate real anime image
+            # D_real = self.D(tgt)
+            # D_real_loss = self.BCE_loss(D_real, torch.ones_like(D_real, device=self.device))
+            #
+            # # discriminate generated/fake anime image
+            # fake_anim = self.G(src)
+            # D_fake = self.D(fake_anim)
+            # D_fake_loss = self.BCE_loss(D_fake, torch.zeros_like(D_fake, device=self.device))
+            #
+            # D_loss = D_real_loss + D_fake_loss
+            # D_losses.append(D_loss.item())
+            #
+            # # generated/fake anime image
+            # fake_anim = self.G(src)
+            # D_fake = self.D(fake_anim)
+            # D_fake_loss = self.BCE_loss(D_fake, torch.ones_like(D_fake, device=self.device))
+            #
+            # # content loss (L1)
+            # src_feature = self.vgg19((src + 1) / 2)
+            # G_feature = self.vgg19((fake_anim + 1) / 2)
+            # Content_loss = self.content_loss_lambda * self.L1_loss(G_feature, src_feature.detach())
+            #
+            # G_loss = D_fake_loss + Content_loss
+            # G_losses.append(G_loss.item())
+            # Content_losses.append(Content_loss.item())
 
             # visualize generated samples
             B, C, H, W = outputs.shape
@@ -200,17 +209,16 @@ class Experiment:
                 np.random.shuffle(idx)
                 idx = idx[:save_num]
                 for i in range(save_num):
-                    filename = "%s_%s.png" % (e, i)
+                    filename = "%s_%s_%s.png" % (e, batch_idx, i)
                     output = outputs[idx[i], :, :, :]
-                    output = Image.fromarray(output)
-                    output.save(save_path + filename)
-        return
+                    output = Image.fromarray(output, mode="RGB")
+                    output.save(os.path.join(save_path, filename))
 
     def run(self):
         for e in range(self.num_epoch):
             self._train()
             self._valid(e)
-        self._test()
+        # self._test()
 
     def _save_model(self, epoch, D_state, G_state, D_optim_state, G_optim_state):
         """ save model """

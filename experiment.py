@@ -29,6 +29,7 @@ class Experiment:
         root = config["dataset"]["root"]
         self.root = os.path.abspath(root)
         self.num_epoch = config["num_epoch"]
+        self.warmup_epoch = config["train"]["G_warming"]
         self.batch_size = config["dataset"]["batch_size"]
         self.G_path = config["model"]["G_path"]
         self.D_path = config["model"]["D_path"]
@@ -71,20 +72,20 @@ class Experiment:
         self.G.to(self.device)
 
         # initialize vgg19 pretrained model
-        self.vgg19 = torchvision.models.mobilenet_v2(pretrained=True)
+        self.vgg19 = torchvision.models.vgg19(pretrained=True)
         self.vgg19.to(self.device)
         self.vgg19.eval()
 
         # initialize optimizer
         self.D_optimizer = optim.Adam(
-            self.D.parameters(), config["optim"]["D_lr"], betas=(0.9, 0.99))
+            self.D.parameters(), config["optim"]["D_lr"], betas=(0.5, 0.99))
         self.G_optimizer = optim.Adam(
-            self.G.parameters(), config["optim"]["G_lr"], betas=(0.9, 0.99))
+            self.G.parameters(), config["optim"]["G_lr"], betas=(0.5, 0.99))
 
         # initialize loss function
         self.BCE_loss = nn.BCELoss().to(self.device)
         self.L1_loss = nn.L1Loss().to(self.device)
-        self.content_loss_lambda = 1
+        self.content_loss_lambda = 10
 
         # initialize scheduler
         self.D_scheduler = MultiStepLR(
@@ -108,8 +109,10 @@ class Experiment:
 
         for i, data in enumerate(zip(self.train_real_loader, self.train_anim_loader)):
             src, anim = data[0], data[1]
+
             origin_anim = anim[:, :, :, :256]
             edge_smooth_anim = anim[:, :, :, 256:]
+
             src = src.to(self.device)
             edge_smooth_anim, origin_anim = edge_smooth_anim.to(
                 self.device), origin_anim.to(self.device)
@@ -156,26 +159,29 @@ class Experiment:
             G_loss.backward()
             self.G_optimizer.step()
 
-            print("Epoch: %s, Discriminator loss: %.3f, Generator loss: %.3f, Content loss: %.3f" % (e, D_loss.item(),
-                                                                                                     G_loss.item(), Content_loss.item()))
+            print("Epoch: %s, Index: %s, Discriminator loss: %.3f, Generator loss: %.3f, Content loss: %.3f" % (e, i,
+                                                                                                                D_loss.item(), G_loss.item(), Content_loss.item()))
             D_losses.append(D_loss.item())
             G_losses.append(G_loss.item())
             Content_losses.append(Content_loss.item())
 
+        average_D_loss = np.mean(D_losses)
+        average_G_loss = np.mean(G_losses)
+        average_content_loss = np.mean(Content_losses)
+
         print()
-        print("Average: Epoch: %s, Discriminator loss: %.3f, Generator loss: %.3f, Content loss: %.3f" % (e, np.mean(D_losses),
-                                                                                                          np.mean(
-                                                                                                              G_losses),
-                                                                                                          np.mean(Content_losses)))
+        print("Average: Epoch: %s, Discriminator loss: %.3f, Generator loss: %.3f, Content loss: %.3f" % (e, average_D_loss,
+                                                                                                          average_G_loss,
+                                                                                                          average_content_loss))
         print()
 
         self.G_scheduler.step()
         self.D_scheduler.step()
-        return D_losses, G_losses, Content_losses
+        return average_D_loss, average_G_loss, average_content_loss
 
     def _train_warming(self, e):
         """
-        warm up the model for 1 epoch; pretrain generator
+        warm up the model for 1 epoch
         :return:
         """
         # put generator to training mode
@@ -202,16 +208,18 @@ class Experiment:
             Content_loss.backward()
             self.G_optimizer.step()
 
-            print("Index: %s, Content loss: %.3f" % (i, Content_loss.item()))
+            print("Epoch: %s, Index: %s, Content loss: %.3f" %
+                  (e, i, Content_loss.item()))
             Content_losses.append(Content_loss.item())
 
+        average_content_loss = np.mean(Content_losses)
+        print()
         print("Epoch: %s, Average content loss: %.3f" %
-              (e, np.mean(Content_losses)))
+              (e, average_content_loss))
+        print()
+        return average_content_loss
 
-    def _valid(self, e, pretrain=False):
-        """
-        Visualization of some sample generated images
-        """
+    def _valid(self, e, pretrain=False):  # use e for image names
         save_path = os.path.join(self.config["valid"]["save_path"])
         with torch.no_grad():
             self.G.eval()
@@ -229,19 +237,30 @@ class Experiment:
                 path = os.path.join(save_path, filename)
 
                 plt.imsave(path, result)
-                if i == 4:
+                if i == 6:
                     break
 
     def run(self):
+        warm_up_content_losses = []      # store the average loss at each epoch
+        training_D_losses = []
+        training_G_losses = []
+        training_content_losses = []
+
         print("start warming up")
-        for e in range(2):
-            self._train_warming(e)
+        for e in range(self.warmup_epoch):
+            curr_content_loss = self._train_warming(e)
+            warm_up_content_losses.append(curr_content_loss)
             self._valid(e, True)
 
         print("start training and validating")
         for e in range(self.num_epoch):
-            self._train(e)
+            curr_D_loss, curr_G_loss, curr_content_loss = self._train(e)
+            training_D_losses.append(curr_D_loss)
+            training_G_losses.append(curr_G_loss)
+            training_content_losses.append(curr_content_loss)
             self._valid(e, False)
+
+        return warm_up_content_losses, training_D_losses, training_G_losses, training_content_losses
 
     def _save_model(self, epoch, D_state, G_state, D_optim_state, G_optim_state):
         """ save model """
